@@ -179,6 +179,8 @@ function createCameraBubbleWindow() {
     }
   });
 
+  cameraBubbleWindow.setAlwaysOnTop(true, 'screen-saver');
+
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { height } = primaryDisplay.workAreaSize;
@@ -215,6 +217,8 @@ function createControlsWindow() {
       nodeIntegration: false
     }
   });
+
+  controlsWindow.setAlwaysOnTop(true, 'screen-saver');
 
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -255,6 +259,7 @@ function createAnnotationWindow() {
     }
   });
 
+  annotationWindow.setAlwaysOnTop(true, 'floating');
   annotationWindow.setIgnoreMouseEvents(true, { forward: true });
   annotationWindow.loadFile(path.join(__dirname, 'renderer/annotation.html'));
 
