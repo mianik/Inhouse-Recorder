@@ -891,11 +891,11 @@ async function startCaptureSession(sourceId) {
       if (captureVideo && screenStream) {
         try {
           const canvas = document.createElement('canvas');
-          canvas.width = 320;
-          canvas.height = 200;
+          canvas.width = 800;
+          canvas.height = 500;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
-          recordingThumbnailData = canvas.toDataURL('image/jpeg', 0.65);
+          recordingThumbnailData = canvas.toDataURL('image/jpeg', 0.8);
         } catch (e) {
           console.warn('Failed to generate preview thumbnail:', e);
         }
