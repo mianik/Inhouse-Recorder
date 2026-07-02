@@ -340,7 +340,7 @@ ipcMain.handle('get-sources', async () => {
     id: source.id,
     name: source.name,
     thumbnail: source.thumbnail.toDataURL(),
-    appIcon: source.appIcon ? source.appIcon.toDataURL() : null
+    appIcon: (source.appIcon && !source.appIcon.isEmpty()) ? source.appIcon.toDataURL() : null
   }));
 });
 
