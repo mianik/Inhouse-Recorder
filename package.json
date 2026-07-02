@@ -1,11 +1,12 @@
 {
   "name": "inhouse-recorder",
   "version": "1.0.0",
-  "description": "A collaborative local-first screen recorder for macOS Apple Silicon",
+  "description": "A collaborative local-first screen recorder for macOS and Windows",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --mac --arm64"
+    "dist": "electron-builder --mac --arm64",
+    "dist:win": "electron-builder --win --x64"
   },
   "author": "Antigravity",
   "license": "MIT",
@@ -26,6 +27,16 @@
       ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false
     },
     "directories": {
       "output": "dist"
