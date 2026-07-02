@@ -20,19 +20,13 @@ body {
   border-radius: 50%;
   overflow: hidden;
   position: relative;
-  border: 3px solid #6366f1;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(99, 102, 241, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
   background: #0d0d11;
   -webkit-app-region: drag; /* Draggable by dragging the video feed */
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-.camera-container:hover {
-  border-color: #818cf8;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(129, 140, 248, 0.5);
 }
 
 #webcam {

@@ -21,7 +21,7 @@ async function initCamera() {
       audio: false // Audio is captured by the recorder in the background dashboard window
     };
 
-    if (settings.cameraId) {
+    if (settings.cameraId && settings.cameraId !== 'default' && settings.cameraId !== 'none') {
       constraints.video.deviceId = { exact: settings.cameraId };
     }
 

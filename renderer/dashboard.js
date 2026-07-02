@@ -236,7 +236,7 @@ async function populateDevices() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     
-    cameraSelect.innerHTML = '<option value="">No Camera</option>';
+    cameraSelect.innerHTML = '<option value="default">Default Camera</option><option value="none">No Camera</option>';
     micSelect.innerHTML = '<option value="default">Default Microphone</option><option value="none">No Microphone</option>';
     
     devices.forEach(device => {
@@ -262,14 +262,15 @@ async function startSettingsPreview() {
   const selectedCamera = cameraSelect.value;
   const selectedMic = micSelect.value;
 
-  if (selectedCamera) {
+  if (selectedCamera && selectedCamera !== 'none') {
     previewNoCam.classList.add('hidden');
     previewWebcam.classList.remove('hidden');
     try {
-      previewStream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: selectedCamera } },
+      const constraints = {
+        video: selectedCamera === 'default' ? true : { deviceId: { exact: selectedCamera } },
         audio: false
-      });
+      };
+      previewStream = await navigator.mediaDevices.getUserMedia(constraints);
       previewWebcam.srcObject = previewStream;
     } catch (err) {
       console.error('Camera preview failed:', err);
@@ -874,7 +875,7 @@ async function startCaptureSession(sourceId) {
     // Hide dashboard window and show overlays
     window.electronAPI.startRecording(sourceId);
     
-    if (appSettings.cameraId) {
+    if (appSettings.cameraId !== 'none') {
       window.electronAPI.showCameraBubble();
     }
     window.electronAPI.showControls();
