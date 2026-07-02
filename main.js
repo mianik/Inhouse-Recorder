@@ -1,0 +1,700 @@
+const { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, protocol, net, systemPreferences } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const http = require('http');
+const ws = require('ws');
+const os = require('os');
+
+let dashboardWindow = null;
+let selectorWindow = null;
+let cameraBubbleWindow = null;
+let controlsWindow = null;
+
+// Collaboration Server State
+let httpServer = null;
+let wsServer = null;
+const activeSockets = new Set();
+
+// Paths
+const DEFAULT_SAVE_DIR = path.join(app.getPath('movies'), 'InhouseRecorder');
+const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
+
+// Ensure recordings directory exists
+if (!fs.existsSync(DEFAULT_SAVE_DIR)) {
+  fs.mkdirSync(DEFAULT_SAVE_DIR, { recursive: true });
+}
+
+// Generate random IDs for signaling client tracking
+function generateId() {
+  return Math.random().toString(36).substring(2, 9);
+}
+
+// Load Settings
+function loadSettings() {
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+      return JSON.parse(data);
+    } catch (e) {
+      console.error('Failed to load settings', e);
+    }
+  }
+  return {
+    saveDirectory: DEFAULT_SAVE_DIR,
+    microphoneId: 'default',
+    cameraId: '',
+    resolution: '1080p',
+    fps: 30
+  };
+}
+
+// Save Settings
+function saveSettings(settings) {
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+    return true;
+  } catch (e) {
+    console.error('Failed to save settings', e);
+    return false;
+  }
+}
+
+// Get Local Network IP
+function getNetworkIP() {
+  const interfaces = os.networkInterfaces();
+  for (let ifaceName in interfaces) {
+    const iface = interfaces[ifaceName];
+    for (let i = 0; i < iface.length; i++) {
+      const alias = iface[i];
+      if (alias.family === 'IPv4' && !alias.internal) {
+        return alias.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+// Check and request camera/microphone permissions (macOS specific)
+async function checkAndAskPermissions() {
+  if (process.platform === 'darwin') {
+    try {
+      // Camera permission request
+      const cameraStatus = systemPreferences.getMediaAccessStatus('camera');
+      if (cameraStatus === 'not-determined') {
+        await systemPreferences.askForMediaAccess('camera');
+      }
+      
+      // Microphone permission request
+      const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+      if (micStatus === 'not-determined') {
+        await systemPreferences.askForMediaAccess('microphone');
+      }
+    } catch (error) {
+      console.warn('System preferences API for media access check failed:', error);
+    }
+  }
+}
+
+// Create Main Dashboard Window
+function createDashboardWindow() {
+  dashboardWindow = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    minWidth: 800,
+    minHeight: 600,
+    show: false,
+    titleBarStyle: 'hiddenInset',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  dashboardWindow.loadFile(path.join(__dirname, 'renderer/dashboard.html'));
+
+  dashboardWindow.once('ready-to-show', () => {
+    dashboardWindow.show();
+  });
+
+  dashboardWindow.on('closed', () => {
+    dashboardWindow = null;
+    stopCollaborationServer();
+    app.quit();
+  });
+}
+
+// Create Screen/Window Selector Window
+function createSelectorWindow() {
+  if (selectorWindow) {
+    selectorWindow.focus();
+    return;
+  }
+
+  selectorWindow = new BrowserWindow({
+    width: 700,
+    height: 550,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    parent: dashboardWindow,
+    modal: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  selectorWindow.loadFile(path.join(__dirname, 'renderer/selector.html'));
+
+  selectorWindow.on('closed', () => {
+    selectorWindow = null;
+  });
+}
+
+// Create Floating Camera Bubble Window
+function createCameraBubbleWindow() {
+  if (cameraBubbleWindow) {
+    cameraBubbleWindow.focus();
+    return;
+  }
+
+  const bubbleSize = 180;
+  
+  cameraBubbleWindow = new BrowserWindow({
+    width: bubbleSize,
+    height: bubbleSize,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    hasShadow: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { height } = primaryDisplay.workAreaSize;
+  cameraBubbleWindow.setPosition(40, height - bubbleSize - 40);
+
+  cameraBubbleWindow.loadFile(path.join(__dirname, 'renderer/camera.html'));
+
+  cameraBubbleWindow.on('closed', () => {
+    cameraBubbleWindow = null;
+  });
+}
+
+// Create Floating Controls Window
+function createControlsWindow() {
+  if (controlsWindow) {
+    controlsWindow.focus();
+    return;
+  }
+
+  const width = 360;
+  const height = 75;
+
+  controlsWindow = new BrowserWindow({
+    width: width,
+    height: height,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    hasShadow: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const displayHeight = primaryDisplay.workAreaSize.height;
+  controlsWindow.setPosition(240, displayHeight - height - 40);
+
+  controlsWindow.loadFile(path.join(__dirname, 'renderer/controls.html'));
+
+  controlsWindow.on('closed', () => {
+    controlsWindow = null;
+  });
+}
+
+// -------------------------------------------------------------
+// Collaboration Server Implementation
+// -------------------------------------------------------------
+function startCollaborationServer() {
+  if (httpServer) return { success: true, url: `http://${getNetworkIP()}:9090/` };
+  
+  const port = 9090;
+  const ip = getNetworkIP();
+  
+  try {
+    httpServer = http.createServer((req, res) => {
+      const url = req.url;
+      if (url === '/join' || url === '/') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(fs.readFileSync(path.join(__dirname, 'renderer/join.html')));
+      } else if (url === '/join.css') {
+        res.writeHead(200, { 'Content-Type': 'text/css' });
+        res.end(fs.readFileSync(path.join(__dirname, 'renderer/join.css')));
+      } else if (url === '/join.js') {
+        res.writeHead(200, { 'Content-Type': 'application/javascript' });
+        res.end(fs.readFileSync(path.join(__dirname, 'renderer/join.js')));
+      } else {
+        res.writeHead(404);
+        res.end('Not Found');
+      }
+    });
+
+    wsServer = new ws.WebSocketServer({ server: httpServer });
+
+    wsServer.on('connection', (socket) => {
+      const socketId = generateId();
+      socket.id = socketId;
+      activeSockets.add(socket);
+
+      socket.on('message', (message) => {
+        try {
+          const data = JSON.parse(message);
+          data.socketId = socket.id;
+
+          // Guest messages to relay to the Host app window:
+          if (['join', 'offer', 'candidate', 'screen-offer', 'screen-candidate'].includes(data.type)) {
+            if (dashboardWindow) {
+              dashboardWindow.webContents.send('collaboration-event', data);
+            }
+          } 
+          // Host responses targeting a specific guest socket:
+          else if (['answer', 'dashboard-candidate', 'screen-answer', 'screen-dashboard-candidate', 'kick'].includes(data.type)) {
+            for (let s of activeSockets) {
+              if (s.id === data.targetSocketId) {
+                s.send(JSON.stringify(data));
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Failed processing socket message', err);
+        }
+      });
+
+      socket.on('close', () => {
+        activeSockets.delete(socket);
+        if (dashboardWindow) {
+          dashboardWindow.webContents.send('collaboration-event', {
+            type: 'disconnect',
+            socketId: socket.id
+          });
+        }
+      });
+    });
+
+    httpServer.listen(port);
+    console.log(`Collaboration server running at http://${ip}:${port}`);
+    return { success: true, url: `http://${ip}:${port}/` };
+  } catch (err) {
+    console.error('Failed to start collaboration server', err);
+    return { success: false, error: err.message };
+  }
+}
+
+function stopCollaborationServer() {
+  if (wsServer) {
+    wsServer.close();
+    wsServer = null;
+  }
+  if (httpServer) {
+    httpServer.close();
+    httpServer = null;
+  }
+  
+  // Close all connections
+  for (let s of activeSockets) {
+    s.close();
+  }
+  activeSockets.clear();
+  return { success: true };
+}
+
+// -------------------------------------------------------------
+// IPC Handlers
+// -------------------------------------------------------------
+
+// Capture Sources
+ipcMain.handle('get-sources', async () => {
+  const sources = await desktopCapturer.getSources({
+    types: ['window', 'screen'],
+    thumbnailSize: { width: 300, height: 200 },
+    fetchWindowIcons: true
+  });
+
+  return sources.map(source => ({
+    id: source.id,
+    name: source.name,
+    thumbnail: source.thumbnail.toDataURL(),
+    appIcon: source.appIcon ? source.appIcon.toDataURL() : null
+  }));
+});
+
+// Settings & Dialogs
+ipcMain.handle('get-settings', () => {
+  return loadSettings();
+});
+
+ipcMain.handle('save-settings', (event, settings) => {
+  return saveSettings(settings);
+});
+
+ipcMain.handle('select-directory', async () => {
+  const result = await dialog.showOpenDialog(dashboardWindow, {
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+  return null;
+});
+
+// Collaboration IPCs
+ipcMain.handle('start-collaboration-server', () => {
+  return startCollaborationServer();
+});
+
+ipcMain.handle('stop-collaboration-server', () => {
+  return stopCollaborationServer();
+});
+
+ipcMain.on('send-collaboration-signal', (event, signal) => {
+  // Send signaling messages back out to guests
+  for (let s of activeSockets) {
+    if (s.id === signal.targetSocketId) {
+      s.send(JSON.stringify(signal));
+      break;
+    }
+  }
+});
+
+// Selector Control
+ipcMain.on('open-selector', () => {
+  createSelectorWindow();
+});
+
+ipcMain.on('close-selector', (event, selectedSourceId) => {
+  if (selectorWindow) {
+    selectorWindow.close();
+  }
+  if (dashboardWindow && selectedSourceId) {
+    dashboardWindow.webContents.send('recording-action', {
+      type: 'SOURCE_SELECTED',
+      sourceId: selectedSourceId
+    });
+  }
+});
+
+ipcMain.on('cancel-selector', () => {
+  if (selectorWindow) {
+    selectorWindow.close();
+  }
+});
+
+// Recording Control Relay
+ipcMain.on('start-recording', (event, sourceId) => {
+  if (dashboardWindow) {
+    dashboardWindow.hide();
+  }
+});
+
+ipcMain.on('stop-recording', () => {
+  if (dashboardWindow) {
+    dashboardWindow.webContents.send('recording-action', { type: 'STOP' });
+  }
+});
+
+ipcMain.on('pause-recording', () => {
+  if (dashboardWindow) {
+    dashboardWindow.webContents.send('recording-action', { type: 'PAUSE' });
+  }
+});
+
+ipcMain.on('resume-recording', () => {
+  if (dashboardWindow) {
+    dashboardWindow.webContents.send('recording-action', { type: 'RESUME' });
+  }
+});
+
+ipcMain.on('cancel-recording', () => {
+  if (dashboardWindow) {
+    dashboardWindow.webContents.send('recording-action', { type: 'CANCEL' });
+  }
+  closeRecordingOverlays();
+  if (dashboardWindow) {
+    dashboardWindow.show();
+  }
+});
+
+ipcMain.on('toggle-mic', (event, isMuted) => {
+  if (dashboardWindow) {
+    dashboardWindow.webContents.send('recording-action', { type: 'TOGGLE_MIC', isMuted });
+  }
+});
+
+// Close all overlays
+function closeRecordingOverlays() {
+  if (cameraBubbleWindow) {
+    cameraBubbleWindow.close();
+    cameraBubbleWindow = null;
+  }
+  if (controlsWindow) {
+    controlsWindow.close();
+    controlsWindow = null;
+  }
+}
+
+// Camera Bubble control
+ipcMain.on('show-camera-bubble', () => {
+  createCameraBubbleWindow();
+});
+
+ipcMain.on('hide-camera-bubble', () => {
+  if (cameraBubbleWindow) {
+    cameraBubbleWindow.close();
+    cameraBubbleWindow = null;
+  }
+});
+
+ipcMain.on('set-camera-bubble-size', (event, size) => {
+  if (!cameraBubbleWindow) return;
+  
+  let newSize = 180;
+  if (size === 'medium') newSize = 280;
+  if (size === 'large') newSize = 400;
+
+  cameraBubbleWindow.setSize(newSize, newSize);
+});
+
+// Floating controls control
+ipcMain.on('show-controls', () => {
+  createControlsWindow();
+});
+
+ipcMain.on('hide-controls', () => {
+  if (controlsWindow) {
+    controlsWindow.close();
+    controlsWindow = null;
+  }
+});
+
+ipcMain.on('update-controls-state', (event, state) => {
+  if (controlsWindow) {
+    controlsWindow.webContents.send('controls-state-change', state);
+  }
+});
+
+// Video chunk management
+let activeChunks = [];
+
+ipcMain.handle('save-video-chunk', (event, arrayBuffer) => {
+  activeChunks.push(Buffer.from(arrayBuffer));
+  return true;
+});
+
+ipcMain.handle('finalize-recording', async (event, metadata) => {
+  try {
+    const settings = loadSettings();
+    const saveDir = settings.saveDirectory || DEFAULT_SAVE_DIR;
+
+    if (!fs.existsSync(saveDir)) {
+      fs.mkdirSync(saveDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `InhouseRecorder_Recording_${timestamp}.webm`;
+    const filePath = path.join(saveDir, filename);
+
+    // Concatenate chunks and write file
+    const completeBuffer = Buffer.concat(activeChunks);
+    fs.writeFileSync(filePath, completeBuffer);
+    
+    // Clear chunks cache
+    activeChunks = [];
+
+    // Save metadata entry in a recordings.json inside the app support dir
+    const recordingsIndexFile = path.join(app.getPath('userData'), 'recordings.json');
+    let recordingsIndex = [];
+    if (fs.existsSync(recordingsIndexFile)) {
+      try {
+        recordingsIndex = JSON.parse(fs.readFileSync(recordingsIndexFile, 'utf-8'));
+      } catch (err) {
+        console.error('Failed parsing index file', err);
+      }
+    }
+
+    recordingsIndex.unshift({
+      filename: filename,
+      path: filePath,
+      title: metadata.title || `Recording ${new Date().toLocaleString()}`,
+      duration: metadata.duration || '0:00',
+      timestamp: new Date().getTime(),
+      size: completeBuffer.length
+    });
+
+    fs.writeFileSync(recordingsIndexFile, JSON.stringify(recordingsIndex, null, 2), 'utf-8');
+
+    closeRecordingOverlays();
+    
+    if (dashboardWindow) {
+      dashboardWindow.show();
+      dashboardWindow.webContents.send('recording-action', { type: 'SAVED' });
+    }
+
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('Error finalising recording:', error);
+    activeChunks = [];
+    closeRecordingOverlays();
+    if (dashboardWindow) {
+      dashboardWindow.show();
+    }
+    return { success: false, error: error.message };
+  }
+});
+
+// Retrieve list of past recordings
+ipcMain.handle('get-recordings', () => {
+  const recordingsIndexFile = path.join(app.getPath('userData'), 'recordings.json');
+  if (fs.existsSync(recordingsIndexFile)) {
+    try {
+      const data = fs.readFileSync(recordingsIndexFile, 'utf-8');
+      const list = JSON.parse(data);
+      const validatedList = list.filter(item => fs.existsSync(item.path));
+      if (validatedList.length !== list.length) {
+        fs.writeFileSync(recordingsIndexFile, JSON.stringify(validatedList, null, 2), 'utf-8');
+      }
+      return validatedList;
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  }
+  return [];
+});
+
+// Delete recording
+ipcMain.handle('delete-recording', (event, filename) => {
+  const recordingsIndexFile = path.join(app.getPath('userData'), 'recordings.json');
+  if (fs.existsSync(recordingsIndexFile)) {
+    try {
+      let list = JSON.parse(fs.readFileSync(recordingsIndexFile, 'utf-8'));
+      const itemToDelete = list.find(item => item.filename === filename);
+      if (itemToDelete) {
+        if (fs.existsSync(itemToDelete.path)) {
+          fs.unlinkSync(itemToDelete.path);
+        }
+        list = list.filter(item => item.filename !== filename);
+        fs.writeFileSync(recordingsIndexFile, JSON.stringify(list, null, 2), 'utf-8');
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  }
+  return false;
+});
+
+// Open Recording Folder in Finder
+ipcMain.handle('open-recording-folder', (event, filename) => {
+  const recordingsIndexFile = path.join(app.getPath('userData'), 'recordings.json');
+  if (fs.existsSync(recordingsIndexFile)) {
+    try {
+      const list = JSON.parse(fs.readFileSync(recordingsIndexFile, 'utf-8'));
+      const item = list.find(it => it.filename === filename);
+      if (item && fs.existsSync(item.path)) {
+        shell.showItemInFolder(item.path);
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  return false;
+});
+
+// Export recording to user-selected location
+ipcMain.handle('export-recording', async (event, filename) => {
+  const recordingsIndexFile = path.join(app.getPath('userData'), 'recordings.json');
+  if (!fs.existsSync(recordingsIndexFile)) return { success: false, error: 'No recordings database exists.' };
+  
+  try {
+    const list = JSON.parse(fs.readFileSync(recordingsIndexFile, 'utf-8'));
+    const item = list.find(it => it.filename === filename);
+    if (!item || !fs.existsSync(item.path)) {
+      return { success: false, error: 'Recording file does not exist on disk.' };
+    }
+    
+    const result = await dialog.showSaveDialog(dashboardWindow, {
+      title: 'Export Recording',
+      defaultPath: path.join(app.getPath('downloads'), filename),
+      filters: [
+        { name: 'WebM Video', extensions: ['webm'] }
+      ]
+    });
+    
+    if (!result.canceled && result.filePath) {
+      fs.copyFileSync(item.path, result.filePath);
+      return { success: true, filePath: result.filePath };
+    }
+    return { success: false, canceled: true };
+  } catch (error) {
+    console.error('Failed to export recording:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Register custom protocol for local video playback
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'video-stream', privileges: { bypassCSP: true, stream: true, supportFetchAPI: true, secure: true } }
+]);
+
+// App Lifecycle
+app.whenReady().then(async () => {
+  // Set app name
+  app.name = "InhouseRecorder";
+  
+  // Prompt macOS system permissions on start
+  await checkAndAskPermissions();
+  
+  // Register custom protocol handler
+  protocol.handle('video-stream', (request) => {
+    try {
+      const url = new URL(request.url);
+      const filePath = decodeURIComponent(url.pathname);
+      return net.fetch('file://' + filePath);
+    } catch (e) {
+      console.error('Failed to stream video', e);
+      return new Response('Error loading media', { status: 500 });
+    }
+  });
+
+  createDashboardWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createDashboardWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});

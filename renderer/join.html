@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join Recording Session - Inhouse Recorder</title>
+  <link rel="stylesheet" href="join.css">
+</head>
+<body>
+  <div class="glass-container">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <circle cx="12" cy="12" r="10"></circle>
+        <circle cx="12" cy="12" r="4" fill="#6366f1"></circle>
+      </svg>
+      <span>Inhouse Recorder</span>
+    </div>
+
+    <!-- Step 1: Pre-join configuration -->
+    <div class="setup-panel" id="setupPanel">
+      <h2>Join Session</h2>
+      <p>Configure your devices before joining the host's recording.</p>
+
+      <div class="preview-area">
+        <video id="localPreview" autoplay playsinline muted></video>
+        <div class="no-preview" id="noPreview">Camera Off</div>
+      </div>
+
+      <div class="form-group">
+        <label for="username">Your Name</label>
+        <input type="text" id="username" placeholder="Enter your name" autocomplete="off" required>
+      </div>
+
+      <!-- Controls prior to join -->
+      <div class="device-toggles">
+        <button class="icon-btn" id="toggleCam" title="Toggle Camera">
+          <svg id="camOn" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          <svg id="camOff" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        </button>
+
+        <button class="icon-btn" id="toggleMic" title="Toggle Microphone">
+          <svg id="micOn" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v1a7 7 0 0 1-14 0v-1"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <svg id="micOff" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+            <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+            <path d="M17 11a6.97 6.97 0 0 1-1.3 4"></path>
+            <path d="M19 10v1a7.92 7.92 0 0 1-.78 3.42M5.12 5.12A7.91 7.91 0 0 0 5 10v1a7 7 0 0 0 14 0v-1"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
+
+        <button class="icon-btn" id="toggleScreen" title="Share Screen">
+          <svg id="screenOff" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <svg id="screenOn" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+            <path d="M17 8l-5 5-5-5"></path>
+          </svg>
+        </button>
+      </div>
+
+      <button class="btn btn-primary" id="joinBtn">Join Session</button>
+    </div>
+
+    <!-- Step 2: Active Connection Display -->
+    <div class="active-panel hidden" id="activePanel">
+      <div class="connection-status">
+        <div class="pulse-ring"></div>
+        <h2>Streaming Live</h2>
+        <p>You are connected to the recording session as <strong id="displayName"></strong>.</p>
+      </div>
+
+      <div class="preview-area active-preview">
+        <video id="localActivePreview" autoplay playsinline muted></video>
+        <div class="sharing-badge hidden" id="sharingBadge">Sharing Screen</div>
+      </div>
+
+      <!-- Live toggle actions -->
+      <div class="active-toggles">
+        <button class="control-btn" id="activeCamBtn">Camera</button>
+        <button class="control-btn" id="activeMicBtn">Mic</button>
+        <button class="control-btn" id="activeScreenBtn">Share Screen</button>
+      </div>
+
+      <button class="btn btn-danger" id="leaveBtn">Leave Session</button>
+    </div>
+  </div>
+
+  <script src="join.js"></script>
+</body>
+</html>
