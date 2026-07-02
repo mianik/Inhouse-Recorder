@@ -57,6 +57,7 @@ let previewAudioStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
 let screenStream = null;
+let captureVideo = null;
 let audioStream = null;
 let recordingStartTime = 0;
 let currentPlayingFilename = null;
@@ -816,6 +817,12 @@ async function startCaptureSession(sourceId) {
       }
     });
 
+    captureVideo = document.createElement('video');
+    captureVideo.srcObject = screenStream;
+    captureVideo.muted = true;
+    captureVideo.setAttribute('playsinline', '');
+    captureVideo.play().catch(e => console.warn('captureVideo play failed', e));
+
     // 2. Capture Audio Stream (if enabled)
     let combinedStream;
     if (micId !== 'none') {
@@ -910,6 +917,10 @@ function cleanStreams() {
     audioStream.getTracks().forEach(track => track.stop());
     audioStream = null;
   }
+  if (captureVideo) {
+    captureVideo.srcObject = null;
+    captureVideo = null;
+  }
   mediaRecorder = null;
 }
 
@@ -923,3 +934,53 @@ async function init() {
 }
 
 init();
+
+// Screenshot capture listener
+window.electronAPI.onScreenshotCommand(async () => {
+  if (!screenStream || !captureVideo) return;
+  
+  try {
+    const canvas = document.createElement('canvas');
+    const track = screenStream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    canvas.width = settings.width || 1920;
+    canvas.height = settings.height || 1080;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
+    
+    const dataUrl = canvas.toDataURL('image/png');
+    const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+    const arrayBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `Screenshot_${timestamp}.png`;
+    
+    const result = await window.electronAPI.saveScreenshot(arrayBuffer, filename);
+    if (result.success) {
+      showToastNotification(`Screenshot saved to library: ${filename}`);
+    } else {
+      console.error('Failed to save screenshot:', result.error);
+      alert('Failed to save screenshot');
+    }
+  } catch (err) {
+    console.error('Failed to capture screenshot frame:', err);
+  }
+});
+
+// Toast notification helper
+function showToastNotification(message) {
+  const toast = document.createElement('div');
+  toast.className = 'toast-alert';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  
+  // Trigger transition
+  setTimeout(() => toast.classList.add('visible'), 50);
+  
+  // Remove after 3.5s
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 400);
+  }, 3500);
+}

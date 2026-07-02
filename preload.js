@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteRecording: (filename) => ipcRenderer.invoke('delete-recording', filename),
   openRecordingFolder: (filename) => ipcRenderer.invoke('open-recording-folder', filename),
   exportRecording: (filename) => ipcRenderer.invoke('export-recording', filename),
+  saveScreenshot: (arrayBuffer, filename) => ipcRenderer.invoke('save-screenshot', arrayBuffer, filename),
   
   // Settings & System Dialogs
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
@@ -44,6 +45,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startCollaborationServer: () => ipcRenderer.invoke('start-collaboration-server'),
   stopCollaborationServer: () => ipcRenderer.invoke('stop-collaboration-server'),
   sendCollaborationSignal: (signal) => ipcRenderer.send('send-collaboration-signal', signal),
+
+  // Annotation Overlay Controls
+  setAnnotationMode: (mode) => ipcRenderer.send('set-annotation-mode', mode),
+  setSpotlightMode: (active) => ipcRenderer.send('set-spotlight-mode', active),
+  clearAnnotations: () => ipcRenderer.send('clear-annotations'),
+  captureScreenshot: () => ipcRenderer.send('capture-screenshot'),
   
   // Event Listeners
   onRecordingAction: (callback) => {
@@ -62,5 +69,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('collaboration-event', subscription);
     return () => ipcRenderer.removeListener('collaboration-event', subscription);
+  },
+
+  onAnnotationCommand: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('annotation-command', subscription);
+    return () => ipcRenderer.removeListener('annotation-command', subscription);
+  },
+
+  onScreenshotCommand: (callback) => {
+    const subscription = (event) => callback();
+    ipcRenderer.on('screenshot-command', subscription);
+    return () => ipcRenderer.removeListener('screenshot-command', subscription);
   }
 });

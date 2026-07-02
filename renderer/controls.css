@@ -25,13 +25,13 @@ body {
   border-radius: 35px;
   height: 60px;
   width: calc(100vw - 10px);
-  max-width: 350px;
+  max-width: 500px; /* Expanded for more controls */
   padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  -webkit-app-region: drag; /* Draggable by dragging the pill background */
+  -webkit-app-region: drag;
 }
 
 .status-section {
@@ -101,12 +101,20 @@ body {
   width: 1px;
   height: 30px;
   background: rgba(255, 255, 255, 0.1);
+  margin: 0 6px;
+}
+
+.sub-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0 2px;
 }
 
 .actions-section {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   -webkit-app-region: no-drag;
 }
 
@@ -114,8 +122,8 @@ body {
   background: transparent;
   border: none;
   color: rgba(255, 255, 255, 0.65);
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -136,7 +144,7 @@ body {
 
 .action-btn.active {
   color: #6366f1;
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(99, 102, 241, 0.15);
   border: 1px solid rgba(99, 102, 241, 0.2);
 }
 

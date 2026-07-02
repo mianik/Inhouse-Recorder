@@ -9,6 +9,7 @@ let dashboardWindow = null;
 let selectorWindow = null;
 let cameraBubbleWindow = null;
 let controlsWindow = null;
+let annotationWindow = null;
 
 // Collaboration Server State
 let httpServer = null;
@@ -197,7 +198,7 @@ function createControlsWindow() {
     return;
   }
 
-  const width = 360;
+  const width = 500; // Expanded width to fit annotation/spotlight/screenshot buttons
   const height = 75;
 
   controlsWindow = new BrowserWindow({
@@ -224,6 +225,41 @@ function createControlsWindow() {
 
   controlsWindow.on('closed', () => {
     controlsWindow = null;
+  });
+}
+
+// Create Fullscreen Transparent Drawing/Annotation Window
+function createAnnotationWindow() {
+  if (annotationWindow) return;
+
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.bounds;
+
+  annotationWindow = new BrowserWindow({
+    x: 0,
+    y: 0,
+    width: width,
+    height: height,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    enableLargerThanScreen: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  annotationWindow.setIgnoreMouseEvents(true, { forward: true });
+  annotationWindow.loadFile(path.join(__dirname, 'renderer/annotation.html'));
+
+  annotationWindow.on('closed', () => {
+    annotationWindow = null;
   });
 }
 
@@ -266,13 +302,11 @@ function startCollaborationServer() {
           const data = JSON.parse(message);
           data.socketId = socket.id;
 
-          // Guest messages to relay to the Host app window:
           if (['join', 'offer', 'candidate', 'screen-offer', 'screen-candidate'].includes(data.type)) {
             if (dashboardWindow) {
               dashboardWindow.webContents.send('collaboration-event', data);
             }
           } 
-          // Host responses targeting a specific guest socket:
           else if (['answer', 'dashboard-candidate', 'screen-answer', 'screen-dashboard-candidate', 'kick'].includes(data.type)) {
             for (let s of activeSockets) {
               if (s.id === data.targetSocketId) {
@@ -316,7 +350,6 @@ function stopCollaborationServer() {
     httpServer = null;
   }
   
-  // Close all connections
   for (let s of activeSockets) {
     s.close();
   }
@@ -373,7 +406,6 @@ ipcMain.handle('stop-collaboration-server', () => {
 });
 
 ipcMain.on('send-collaboration-signal', (event, signal) => {
-  // Send signaling messages back out to guests
   for (let s of activeSockets) {
     if (s.id === signal.targetSocketId) {
       s.send(JSON.stringify(signal));
@@ -410,6 +442,8 @@ ipcMain.on('start-recording', (event, sourceId) => {
   if (dashboardWindow) {
     dashboardWindow.hide();
   }
+  // Open transparent annotation overlay on start
+  createAnnotationWindow();
 });
 
 ipcMain.on('stop-recording', () => {
@@ -446,6 +480,52 @@ ipcMain.on('toggle-mic', (event, isMuted) => {
   }
 });
 
+// Annotation & Presentation Commands
+ipcMain.on('set-annotation-mode', (event, mode) => {
+  if (annotationWindow) {
+    const active = mode !== 'none';
+    // When drawing mode is active, catch mouse events. When inactive, ignore them and click-through.
+    annotationWindow.setIgnoreMouseEvents(!active, { forward: !active });
+    annotationWindow.webContents.send('annotation-command', { type: 'MODE', mode });
+  }
+});
+
+ipcMain.on('set-spotlight-mode', (event, active) => {
+  if (annotationWindow) {
+    // If spotlight is active, ignore events is still toggled to draw highlights or clicks,
+    // but typically we can allow it or toggle mouse capture. We'll set it to be click-through.
+    annotationWindow.webContents.send('annotation-command', { type: 'SPOTLIGHT', active });
+  }
+});
+
+ipcMain.on('clear-annotations', () => {
+  if (annotationWindow) {
+    annotationWindow.webContents.send('annotation-command', { type: 'CLEAR' });
+  }
+});
+
+ipcMain.on('capture-screenshot', () => {
+  if (dashboardWindow) {
+    dashboardWindow.webContents.send('screenshot-command');
+  }
+});
+
+ipcMain.handle('save-screenshot', async (event, arrayBuffer, filename) => {
+  try {
+    const settings = loadSettings();
+    const saveDir = settings.saveDirectory || DEFAULT_SAVE_DIR;
+    if (!fs.existsSync(saveDir)) {
+      fs.mkdirSync(saveDir, { recursive: true });
+    }
+    const filePath = path.join(saveDir, filename);
+    fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('Failed to save screenshot:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 // Close all overlays
 function closeRecordingOverlays() {
   if (cameraBubbleWindow) {
@@ -455,6 +535,10 @@ function closeRecordingOverlays() {
   if (controlsWindow) {
     controlsWindow.close();
     controlsWindow = null;
+  }
+  if (annotationWindow) {
+    annotationWindow.close();
+    annotationWindow = null;
   }
 }
 
