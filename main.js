@@ -16,7 +16,7 @@ let wsServer = null;
 const activeSockets = new Set();
 
 // Paths
-const DEFAULT_SAVE_DIR = path.join(app.getPath('movies'), 'InhouseRecorder');
+const DEFAULT_SAVE_DIR = path.join(app.getPath('videos'), 'InhouseRecorder');
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 
 // Ensure recordings directory exists
