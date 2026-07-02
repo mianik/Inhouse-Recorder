@@ -61,6 +61,7 @@ let captureVideo = null;
 let audioStream = null;
 let recordingStartTime = 0;
 let currentPlayingFilename = null;
+let recordingThumbnailData = null;
 
 // Collaboration State
 let isServerRunning = false;
@@ -136,12 +137,17 @@ function renderRecordings(list) {
 
     const sizeMB = (item.size / (1024 * 1024)).toFixed(1);
 
-    card.innerHTML = `
-      <div class="recording-thumb">
-        <svg class="recording-thumb-placeholder" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
+    const thumbUrl = item.thumbnailPath ? `video-stream:///${encodeURIComponent(item.thumbnailPath)}` : '';
+    const thumbHtml = thumbUrl 
+      ? `<img src="${thumbUrl}" class="recording-thumbnail-img" />`
+      : `<svg class="recording-thumb-placeholder" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
           <polygon points="23 7 16 12 23 17 23 7"></polygon>
           <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-        </svg>
+        </svg>`;
+
+    card.innerHTML = `
+      <div class="recording-thumb">
+        ${thumbHtml}
         <div class="play-hover-icon">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -868,7 +874,8 @@ async function startCaptureSession(sourceId) {
       
       const metadata = {
         title: `Screen Recording ${new Date().toLocaleString()}`,
-        duration: durationStr
+        duration: durationStr,
+        thumbnailData: recordingThumbnailData
       };
 
       await window.electronAPI.finalizeRecording(metadata);
@@ -877,7 +884,23 @@ async function startCaptureSession(sourceId) {
 
     // 4. Start recording session
     recordingStartTime = new Date().getTime();
+    recordingThumbnailData = null;
     mediaRecorder.start(1000); // chunk every 1 second
+
+    setTimeout(() => {
+      if (captureVideo && screenStream) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 320;
+          canvas.height = 200;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
+          recordingThumbnailData = canvas.toDataURL('image/jpeg', 0.65);
+        } catch (e) {
+          console.warn('Failed to generate preview thumbnail:', e);
+        }
+      }
+    }, 1200);
     
     // Hide dashboard window and show overlays
     window.electronAPI.startRecording(sourceId);

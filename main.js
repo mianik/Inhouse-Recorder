@@ -615,6 +615,19 @@ ipcMain.handle('finalize-recording', async (event, metadata) => {
     // Clear chunks cache
     activeChunks = [];
 
+    // Save thumbnail image if provided
+    let thumbnailPath = '';
+    if (metadata.thumbnailData) {
+      try {
+        const base64Data = metadata.thumbnailData.replace(/^data:image\/jpeg;base64,/, "");
+        const thumbFilename = `InhouseRecorder_Recording_${timestamp}.jpg`;
+        thumbnailPath = path.join(saveDir, thumbFilename);
+        fs.writeFileSync(thumbnailPath, Buffer.from(base64Data, 'base64'));
+      } catch (err) {
+        console.error('Failed to write thumbnail image to disk:', err);
+      }
+    }
+
     // Save metadata entry in a recordings.json inside the app support dir
     const recordingsIndexFile = path.join(app.getPath('userData'), 'recordings.json');
     let recordingsIndex = [];
@@ -629,6 +642,7 @@ ipcMain.handle('finalize-recording', async (event, metadata) => {
     recordingsIndex.unshift({
       filename: filename,
       path: filePath,
+      thumbnailPath: thumbnailPath,
       title: metadata.title || `Recording ${new Date().toLocaleString()}`,
       duration: metadata.duration || '0:00',
       timestamp: new Date().getTime(),
@@ -686,6 +700,13 @@ ipcMain.handle('delete-recording', (event, filename) => {
       if (itemToDelete) {
         if (fs.existsSync(itemToDelete.path)) {
           fs.unlinkSync(itemToDelete.path);
+        }
+        if (itemToDelete.thumbnailPath && fs.existsSync(itemToDelete.thumbnailPath)) {
+          try {
+            fs.unlinkSync(itemToDelete.thumbnailPath);
+          } catch (err) {
+            console.error('Failed to delete thumbnail file:', err);
+          }
         }
         list = list.filter(item => item.filename !== filename);
         fs.writeFileSync(recordingsIndexFile, JSON.stringify(list, null, 2), 'utf-8');
