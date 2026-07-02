@@ -808,11 +808,8 @@ async function startCaptureSession(sourceId) {
         mandatory: {
           chromeMediaSource: 'desktop',
           chromeMediaSourceId: sourceId,
-          minWidth: width,
           maxWidth: width,
-          minHeight: height,
           maxHeight: height,
-          minFrameRate: fps,
           maxFrameRate: fps
         }
       }
