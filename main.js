@@ -4,6 +4,7 @@ const fs = require('fs');
 const http = require('http');
 const ws = require('ws');
 const os = require('os');
+const { spawn } = require('child_process');
 
 let dashboardWindow = null;
 let selectorWindow = null;
@@ -179,7 +180,11 @@ function createCameraBubbleWindow() {
     }
   });
 
-  cameraBubbleWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (process.platform === 'darwin') {
+    cameraBubbleWindow.setAlwaysOnTop(true, 'screen-saver');
+  } else {
+    cameraBubbleWindow.setAlwaysOnTop(true);
+  }
 
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -218,7 +223,11 @@ function createControlsWindow() {
     }
   });
 
-  controlsWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (process.platform === 'darwin') {
+    controlsWindow.setAlwaysOnTop(true, 'screen-saver');
+  } else {
+    controlsWindow.setAlwaysOnTop(true);
+  }
 
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -259,7 +268,11 @@ function createAnnotationWindow() {
     }
   });
 
-  annotationWindow.setAlwaysOnTop(true, 'floating');
+  if (process.platform === 'darwin') {
+    annotationWindow.setAlwaysOnTop(true, 'floating');
+  } else {
+    annotationWindow.setAlwaysOnTop(true);
+  }
   annotationWindow.setIgnoreMouseEvents(true, { forward: true });
   annotationWindow.loadFile(path.join(__dirname, 'renderer/annotation.html'));
 
@@ -289,6 +302,15 @@ function startCollaborationServer() {
       } else if (url === '/join.js') {
         res.writeHead(200, { 'Content-Type': 'application/javascript' });
         res.end(fs.readFileSync(path.join(__dirname, 'renderer/join.js')));
+      } else if (url === '/live') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(fs.readFileSync(path.join(__dirname, 'renderer/live.html')));
+      } else if (url === '/live.css') {
+        res.writeHead(200, { 'Content-Type': 'text/css' });
+        res.end(fs.readFileSync(path.join(__dirname, 'renderer/live.css')));
+      } else if (url === '/live.js') {
+        res.writeHead(200, { 'Content-Type': 'application/javascript' });
+        res.end(fs.readFileSync(path.join(__dirname, 'renderer/live.js')));
       } else {
         res.writeHead(404);
         res.end('Not Found');
@@ -307,12 +329,12 @@ function startCollaborationServer() {
           const data = JSON.parse(message);
           data.socketId = socket.id;
 
-          if (['join', 'offer', 'candidate', 'screen-offer', 'screen-candidate'].includes(data.type)) {
+          if (['join', 'offer', 'candidate', 'screen-offer', 'screen-candidate', 'viewer-join', 'viewer-answer', 'viewer-candidate'].includes(data.type)) {
             if (dashboardWindow) {
               dashboardWindow.webContents.send('collaboration-event', data);
             }
           } 
-          else if (['answer', 'dashboard-candidate', 'screen-answer', 'screen-dashboard-candidate', 'kick'].includes(data.type)) {
+          else if (['answer', 'dashboard-candidate', 'screen-answer', 'screen-dashboard-candidate', 'kick', 'viewer-offer', 'viewer-dashboard-candidate'].includes(data.type)) {
             for (let s of activeSockets) {
               if (s.id === data.targetSocketId) {
                 s.send(JSON.stringify(data));
@@ -767,6 +789,81 @@ ipcMain.handle('export-recording', async (event, filename) => {
     console.error('Failed to export recording:', error);
     return { success: false, error: error.message };
   }
+});
+
+let rtmpProcess = null;
+
+ipcMain.handle('start-rtmp-stream', async (event, rtmpUrl, streamKey) => {
+  if (rtmpProcess) {
+    try {
+      rtmpProcess.stdin.end();
+      rtmpProcess.kill('SIGINT');
+    } catch (e) {}
+    rtmpProcess = null;
+  }
+
+  const fullUrl = `${rtmpUrl}/${streamKey}`;
+  console.log('Starting RTMP Stream to:', rtmpUrl);
+
+  const ffmpegArgs = [
+    '-i', '-', // Pipe input from stdin
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-f', 'flv',
+    fullUrl
+  ];
+
+  try {
+    rtmpProcess = spawn('ffmpeg', ffmpegArgs);
+
+    rtmpProcess.stdin.on('error', (err) => {
+      console.error('rtmpProcess stdin error:', err);
+    });
+
+    rtmpProcess.stderr.on('data', (data) => {
+      console.log('FFmpeg stderr:', data.toString());
+    });
+
+    rtmpProcess.on('close', (code) => {
+      console.log('RTMP Stream FFmpeg process closed with code:', code);
+      rtmpProcess = null;
+      if (dashboardWindow) {
+        dashboardWindow.webContents.send('rtmp-status', { status: 'stopped', code });
+      }
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to spawn FFmpeg:', err);
+    return { success: false, error: 'Failed to spawn FFmpeg. Is FFmpeg installed on your path?' };
+  }
+});
+
+ipcMain.on('send-rtmp-chunk', (event, arrayBuffer) => {
+  if (rtmpProcess && rtmpProcess.stdin.writable) {
+    const buffer = Buffer.from(arrayBuffer);
+    rtmpProcess.stdin.write(buffer);
+  }
+});
+
+ipcMain.handle('stop-rtmp-stream', async () => {
+  if (rtmpProcess) {
+    try {
+      rtmpProcess.stdin.end();
+      setTimeout(() => {
+        if (rtmpProcess) {
+          rtmpProcess.kill('SIGINT');
+          rtmpProcess = null;
+        }
+      }, 500);
+    } catch (e) {
+      console.error('Failed to stop RTMP process cleanly:', e);
+      rtmpProcess = null;
+    }
+  }
+  return { success: true };
 });
 
 // Register custom protocol for local video playback

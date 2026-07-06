@@ -22,6 +22,22 @@ const participantsGrid = document.getElementById('participantsGrid');
 const noParticipantsMsg = document.getElementById('noParticipantsMsg');
 const floatingFeedsContainer = document.getElementById('floatingFeedsContainer');
 
+// Live Stream Elements
+const navLiveStream = document.getElementById('navLiveStream');
+const panelLiveStream = document.getElementById('panelLiveStream');
+const toggleLiveBtn = document.getElementById('toggleLiveBtn');
+const liveStatusIndicator = document.getElementById('liveStatusIndicator');
+const liveStatusText = document.getElementById('liveStatusText');
+const liveLinkBox = document.getElementById('liveLinkBox');
+const liveUrlInput = document.getElementById('liveUrlInput');
+const copyLiveUrlBtn = document.getElementById('copyLiveUrlBtn');
+const liveViewersCount = document.getElementById('liveViewersCount');
+const liveResolution = document.getElementById('liveResolution');
+const liveFPS = document.getElementById('liveFPS');
+const rtmpUrlInput = document.getElementById('rtmpUrlInput');
+const rtmpKeyInput = document.getElementById('rtmpKeyInput');
+const toggleRtmpBtn = document.getElementById('toggleRtmpBtn');
+
 // Settings Elements
 const settingsForm = document.getElementById('settingsForm');
 const cameraSelect = document.getElementById('cameraSelect');
@@ -65,6 +81,14 @@ let recordingThumbnailData = null;
 
 // Collaboration State
 let isServerRunning = false;
+
+// Live Stream State
+let isLiveBroadcast = false;
+let liveBroadcastStream = null;
+let liveViewers = {}; // socketId -> { pc }
+let rtmpStreamActive = false;
+let rtmpRecorder = null;
+let selectionPurpose = 'recording';
 let guests = []; // { socketId, name, pc, stream, screenPc, screenStream }
 const rtcConfig = {
   iceServers: [
@@ -76,6 +100,7 @@ const rtcConfig = {
 // Tab Navigation
 navRecordings.addEventListener('click', () => switchTab('recordings'));
 navCollaboration.addEventListener('click', () => switchTab('collaboration'));
+navLiveStream.addEventListener('click', () => switchTab('livestream'));
 navSettings.addEventListener('click', () => switchTab('settings'));
 
 function switchTab(tab) {
@@ -85,11 +110,13 @@ function switchTab(tab) {
   // Active state classes for nav items
   navRecordings.classList.toggle('active', tab === 'recordings');
   navCollaboration.classList.toggle('active', tab === 'collaboration');
+  navLiveStream.classList.toggle('active', tab === 'livestream');
   navSettings.classList.toggle('active', tab === 'settings');
 
   // Active panel visibility
   panelRecordings.classList.toggle('active', tab === 'recordings');
   panelCollaboration.classList.toggle('active', tab === 'collaboration');
+  panelLiveStream.classList.toggle('active', tab === 'livestream');
   panelSettings.classList.toggle('active', tab === 'settings');
 
   if (tab !== 'settings') {
@@ -450,10 +477,11 @@ function sendSignal(type, targetSocketId, extraData = {}) {
 
 // Listen for incoming WS messages forwarded from Main process
 window.electronAPI.onCollaborationEvent(async (data) => {
-  if (!isServerRunning) return;
+  if (!isServerRunning && !isLiveBroadcast) return;
 
   switch (data.type) {
     case 'join':
+      if (!isServerRunning) return;
       // Create guest profile
       const guest = {
         socketId: data.socketId,
@@ -468,33 +496,52 @@ window.electronAPI.onCollaborationEvent(async (data) => {
       break;
 
     case 'offer':
-      // Guest initiates WebRTC camera/audio handshake
+      if (!isServerRunning) return;
       handleGuestOffer(data.socketId, data.sdp);
       break;
 
     case 'candidate':
-      // Guest sends ICE candidate for camera stream
+      if (!isServerRunning) return;
       handleGuestCandidate(data.socketId, data.candidate);
       break;
 
     case 'screen-offer':
-      // Guest initiates WebRTC screen sharing handshake
+      if (!isServerRunning) return;
       handleGuestScreenOffer(data.socketId, data.sdp);
       break;
 
     case 'screen-candidate':
-      // Guest sends ICE candidate for screen share
+      if (!isServerRunning) return;
       handleGuestScreenCandidate(data.socketId, data.candidate);
       break;
 
     case 'screen-stop':
-      // Guest stops screen share
+      if (!isServerRunning) return;
       handleGuestScreenStop(data.socketId);
       break;
 
+    case 'viewer-join':
+      if (!isLiveBroadcast) return;
+      handleViewerJoin(data.socketId);
+      break;
+
+    case 'viewer-answer':
+      if (!isLiveBroadcast) return;
+      handleViewerAnswer(data.socketId, data.sdp);
+      break;
+
+    case 'viewer-candidate':
+      if (!isLiveBroadcast) return;
+      handleViewerCandidate(data.socketId, data.candidate);
+      break;
+
     case 'disconnect':
-      // Guest closes browser connection
-      handleGuestDisconnect(data.socketId);
+      if (isServerRunning) {
+        handleGuestDisconnect(data.socketId);
+      }
+      if (isLiveBroadcast) {
+        handleViewerDisconnect(data.socketId);
+      }
       break;
   }
 });
@@ -755,13 +802,18 @@ function updateFloatingFeeds() {
 // -------------------------------------------------------------
 startRecordBtn.addEventListener('click', () => {
   stopSettingsPreview();
+  selectionPurpose = 'recording';
   window.electronAPI.openSelector();
 });
 
 window.electronAPI.onRecordingAction(async (action) => {
   switch (action.type) {
     case 'SOURCE_SELECTED':
-      startCaptureSession(action.sourceId);
+      if (selectionPurpose === 'recording') {
+        startCaptureSession(action.sourceId);
+      } else if (selectionPurpose === 'live') {
+        startLiveCaptureSession(action.sourceId);
+      }
       break;
       
     case 'STOP':
@@ -1007,3 +1059,324 @@ function showToastNotification(message) {
     setTimeout(() => toast.remove(), 400);
   }, 3500);
 }
+
+// -------------------------------------------------------------
+// Live Streaming Controllers
+// -------------------------------------------------------------
+toggleLiveBtn.addEventListener('click', async () => {
+  if (isLiveBroadcast) {
+    stopLiveBroadcast();
+  } else {
+    stopSettingsPreview();
+    selectionPurpose = 'live';
+    window.electronAPI.openSelector();
+  }
+});
+
+async function startLiveCaptureSession(sourceId) {
+  let serverUrl = joinUrlInput.value;
+  if (!isServerRunning) {
+    const serverResult = await window.electronAPI.startCollaborationServer();
+    if (serverResult.success) {
+      isServerRunning = true;
+      serverUrl = serverResult.url;
+      joinUrlInput.value = serverUrl;
+      updateServerUI();
+    } else {
+      alert(`Could not start stream portal server: ${serverResult.error}`);
+      return;
+    }
+  }
+
+  const fps = appSettings.fps || 30;
+  const micId = appSettings.microphoneId || 'default';
+
+  try {
+    // 1. Capture screen video track
+    liveBroadcastScreenStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: sourceId,
+          maxFrameRate: fps
+        }
+      }
+    });
+
+    // 2. Capture mic track
+    try {
+      liveBroadcastMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: micId !== 'none' ? { deviceId: micId ? { exact: micId } : undefined } : false
+      });
+    } catch (e) {
+      console.warn('Could not open selected mic. Trying default audio:', e);
+      liveBroadcastMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
+    // 3. Assemble composite MediaStream
+    const tracks = [];
+    if (liveBroadcastScreenStream) {
+      tracks.push(...liveBroadcastScreenStream.getVideoTracks());
+    }
+    if (liveBroadcastMicStream) {
+      tracks.push(...liveBroadcastMicStream.getAudioTracks());
+    }
+    liveBroadcastStream = new MediaStream(tracks);
+
+    // 4. Update UI Status to live
+    isLiveBroadcast = true;
+    liveStatusIndicator.className = 'status-indicator-dot on';
+    liveStatusText.textContent = 'Live Broadcasting';
+    toggleLiveBtn.textContent = 'Stop Live';
+    toggleLiveBtn.className = 'btn btn-danger';
+    
+    // Set Portal URL display
+    const portalUrl = serverUrl.replace(/\/$/, '') + '/live';
+    liveUrlInput.value = portalUrl;
+    liveLinkBox.classList.remove('hidden');
+
+    // Display capture stats
+    const videoTrack = liveBroadcastScreenStream.getVideoTracks()[0];
+    if (videoTrack) {
+      const settings = videoTrack.getSettings();
+      liveResolution.textContent = `${settings.width || '1920'}x${settings.height || '1080'}`;
+      liveFPS.textContent = `${settings.frameRate || fps} FPS`;
+    }
+
+    // Monitor external ending (e.g. Chrome's overlay stop sharing)
+    videoTrack.onended = () => {
+      stopLiveBroadcast();
+    };
+
+    showToastNotification("Live Stream portal active!");
+
+  } catch (err) {
+    console.error('Failed to start live broadcast capture:', err);
+    alert('Failed to start screen live stream.');
+    stopLiveBroadcast();
+  }
+}
+
+async function stopLiveBroadcast() {
+  if (rtmpStreamActive) {
+    await stopRtmpBroadcast();
+  }
+
+  // 1. Clean up media tracks
+  if (liveBroadcastScreenStream) {
+    liveBroadcastScreenStream.getTracks().forEach(t => t.stop());
+    liveBroadcastScreenStream = null;
+  }
+  if (liveBroadcastMicStream) {
+    liveBroadcastMicStream.getTracks().forEach(t => t.stop());
+    liveBroadcastMicStream = null;
+  }
+  liveBroadcastStream = null;
+
+  // 2. Disconnect and notify all active viewers
+  for (let socketId in liveViewers) {
+    if (liveViewers[socketId].pc) {
+      liveViewers[socketId].pc.close();
+    }
+    sendSignal('kick', socketId);
+  }
+  liveViewers = {};
+  updateViewerCount();
+
+  // 3. Stop collaboration server if room is also closed
+  const isRoomOpen = (serverStatusText.textContent !== 'Room Closed');
+  if (isServerRunning && !isRoomOpen) {
+    await window.electronAPI.stopCollaborationServer();
+    isServerRunning = false;
+    updateServerUI();
+  }
+
+  // 4. Reset UI Elements
+  isLiveBroadcast = false;
+  liveStatusIndicator.className = 'status-indicator-dot off';
+  liveStatusText.textContent = 'Live Broadcast Closed';
+  toggleLiveBtn.textContent = 'Go Live';
+  toggleLiveBtn.className = 'btn btn-primary';
+  liveLinkBox.classList.add('hidden');
+  liveUrlInput.value = '';
+  liveResolution.textContent = '--';
+  liveFPS.textContent = '--';
+
+  showToastNotification("Live broadcast closed.");
+}
+
+// -------------------------------------------------------------
+// Viewer WebRTC Connections
+// -------------------------------------------------------------
+async function handleViewerJoin(socketId) {
+  if (!liveBroadcastStream) return;
+
+  const pc = new RTCPeerConnection(rtcConfig);
+  liveViewers[socketId] = { pc };
+  updateViewerCount();
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendSignal('viewer-dashboard-candidate', socketId, { candidate: event.candidate });
+    }
+  };
+
+  // Add video/audio tracks
+  liveBroadcastStream.getTracks().forEach(track => {
+    pc.addTrack(track, liveBroadcastStream);
+  });
+
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    sendSignal('viewer-offer', socketId, { sdp: offer });
+  } catch (err) {
+    console.error('Failed creating WebRTC offer for live viewer:', err);
+  }
+}
+
+async function handleViewerAnswer(socketId, sdp) {
+  const viewer = liveViewers[socketId];
+  if (viewer && viewer.pc) {
+    try {
+      await viewer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    } catch (err) {
+      console.error('Failed setting viewer remote SDP answer:', err);
+    }
+  }
+}
+
+async function handleViewerCandidate(socketId, candidate) {
+  const viewer = liveViewers[socketId];
+  if (viewer && viewer.pc) {
+    try {
+      await viewer.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.error('Failed adding viewer ICE candidate:', err);
+    }
+  }
+}
+
+function handleViewerDisconnect(socketId) {
+  const viewer = liveViewers[socketId];
+  if (viewer) {
+    if (viewer.pc) {
+      viewer.pc.close();
+    }
+    delete liveViewers[socketId];
+  }
+  updateViewerCount();
+}
+
+function updateViewerCount() {
+  const count = Object.keys(liveViewers).length;
+  liveViewersCount.textContent = count;
+}
+
+// -------------------------------------------------------------
+// RTMP Pipe Streaming
+// -------------------------------------------------------------
+toggleRtmpBtn.addEventListener('click', async () => {
+  if (rtmpStreamActive) {
+    await stopRtmpBroadcast();
+  } else {
+    await startRtmpBroadcast();
+  }
+});
+
+async function startRtmpBroadcast() {
+  if (!isLiveBroadcast || !liveBroadcastStream) {
+    alert("Please click 'Go Live' and share your screen before starting an RTMP broadcast.");
+    return;
+  }
+
+  const rtmpUrl = rtmpUrlInput.value.trim();
+  const streamKey = rtmpKeyInput.value.trim();
+
+  if (!rtmpUrl || !streamKey) {
+    alert("Please enter both the RTMP Server URL and Stream Key.");
+    return;
+  }
+
+  toggleRtmpBtn.textContent = "Connecting...";
+  toggleRtmpBtn.disabled = true;
+
+  const result = await window.electronAPI.startRtmpStream(rtmpUrl, streamKey);
+  toggleRtmpBtn.disabled = false;
+
+  if (result.success) {
+    rtmpStreamActive = true;
+    toggleRtmpBtn.textContent = "Stop RTMP Broadcast";
+    toggleRtmpBtn.className = "btn btn-danger";
+
+    try {
+      rtmpRecorder = new MediaRecorder(liveBroadcastStream, {
+        mimeType: 'video/webm;codecs=vp8,opus',
+        videoBitsPerSecond: 2500000 // 2.5 Mbps
+      });
+
+      rtmpRecorder.ondataavailable = async (event) => {
+        if (event.data && event.data.size > 0 && rtmpStreamActive) {
+          const buffer = await event.data.arrayBuffer();
+          window.electronAPI.sendRtmpChunk(buffer);
+        }
+      };
+
+      rtmpRecorder.start(1000); // 1-second timeslices
+      showToastNotification("RTMP broadcast started successfully!");
+
+    } catch (err) {
+      console.error('Failed to initialize RTMP MediaRecorder:', err);
+      alert('Local MediaRecorder initialization failed: ' + err.message);
+      stopRtmpBroadcast();
+    }
+  } else {
+    alert(`Could not start RTMP stream: ${result.error}`);
+    toggleRtmpBtn.textContent = "Start RTMP Broadcast";
+    toggleRtmpBtn.className = "btn btn-secondary";
+  }
+}
+
+async function stopRtmpBroadcast() {
+  rtmpStreamActive = false;
+  if (rtmpRecorder && rtmpRecorder.state !== 'inactive') {
+    try {
+      rtmpRecorder.stop();
+    } catch (e) {}
+    rtmpRecorder = null;
+  }
+
+  await window.electronAPI.stopRtmpStream();
+  toggleRtmpBtn.textContent = "Start RTMP Broadcast";
+  toggleRtmpBtn.className = "btn btn-secondary";
+  showToastNotification("RTMP broadcast stopped.");
+}
+
+copyLiveUrlBtn.addEventListener('click', () => {
+  if (liveUrlInput.value) {
+    navigator.clipboard.writeText(liveUrlInput.value);
+    const prevText = copyLiveUrlBtn.textContent;
+    copyLiveUrlBtn.textContent = 'Copied!';
+    setTimeout(() => {
+      copyLiveUrlBtn.textContent = prevText;
+    }, 2000);
+  }
+});
+
+// Listener for main process spawned stream status changes
+window.electronAPI.onRtmpStatus((data) => {
+  console.log('RTMP main-process status:', data);
+  if (data.status === 'stopped') {
+    rtmpStreamActive = false;
+    if (rtmpRecorder && rtmpRecorder.state !== 'inactive') {
+      try {
+        rtmpRecorder.stop();
+      } catch (e) {}
+    }
+    rtmpRecorder = null;
+    toggleRtmpBtn.textContent = "Start RTMP Broadcast";
+    toggleRtmpBtn.className = "btn btn-secondary";
+    showToastNotification("RTMP Stream disconnected from server.");
+  }
+});

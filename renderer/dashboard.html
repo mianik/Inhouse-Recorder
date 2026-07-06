@@ -43,6 +43,14 @@
           Collaboration
         </button>
 
+        <button class="nav-item" id="navLiveStream">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 7a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V7z"></path>
+            <polygon points="10 9 15 12 10 15 10 9"></polygon>
+          </svg>
+          Live Stream
+        </button>
+
         <button class="nav-item" id="navSettings">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -127,6 +135,79 @@
             <h3>Connected Guests</h3>
             <div class="participants-list" id="participantsGrid">
               <div class="no-participants" id="noParticipantsMsg">Waiting for guests to join...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Stream Panel -->
+      <div class="content-panel" id="panelLiveStream">
+        <div class="panel-header">
+          <h1>Live Streaming</h1>
+        </div>
+
+        <div class="collaboration-grid-layout">
+          <!-- Live Stream Controls -->
+          <div class="collaboration-settings-card">
+            <h3>Local Live Streaming</h3>
+            <p class="section-desc">Broadcast your screen and audio in real-time. Anyone on your local network can open the live view portal in their browser to watch with zero lag.</p>
+            
+            <div class="toggle-control-box">
+              <div class="server-status-display">
+                <span class="status-indicator-dot off" id="liveStatusIndicator"></span>
+                <span class="status-indicator-text" id="liveStatusText">Live Broadcast Closed</span>
+              </div>
+              <button class="btn btn-primary" id="toggleLiveBtn">Go Live</button>
+            </div>
+
+            <div class="collaboration-link-container hidden" id="liveLinkBox">
+              <div class="form-group">
+                <label>Live View Portal Link</label>
+                <div class="input-with-btn">
+                  <input type="text" id="liveUrlInput" readonly>
+                  <button class="btn btn-secondary" id="copyLiveUrlBtn">Copy</button>
+                </div>
+              </div>
+              <div class="collaboration-help-text">
+                Share this link with viewers on your local network. Active connection will stream your screen and microphone.
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Stream Status & Viewers -->
+          <div class="collaboration-guests-card">
+            <h3>Broadcast Status</h3>
+            <div class="live-status-details">
+              <div class="live-stat-row">
+                <span class="stat-label">Active Viewers:</span>
+                <span class="stat-value" id="liveViewersCount">0</span>
+              </div>
+              <div class="live-stat-row">
+                <span class="stat-label">Resolution:</span>
+                <span class="stat-value" id="liveResolution">--</span>
+              </div>
+              <div class="live-stat-row">
+                <span class="stat-label">Frame Rate:</span>
+                <span class="stat-value" id="liveFPS">--</span>
+              </div>
+            </div>
+            
+            <!-- RTMP External Streaming Setup -->
+            <div class="rtmp-section" style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+              <h3>RTMP Stream (YouTube/Twitch)</h3>
+              <p class="section-desc">Pipes WebM live captures directly to standard RTMP streaming endpoints via local FFmpeg helper.</p>
+              
+              <div class="form-group" style="margin-top: 15px;">
+                <label for="rtmpUrlInput">RTMP Server URL</label>
+                <input type="text" id="rtmpUrlInput" placeholder="rtmp://a.rtmp.youtube.com/live2" autocomplete="off" style="width: 100%; box-sizing: border-box; background: var(--bg-secondary); border: 1px solid var(--border-color); color: #fff; padding: 10px; border-radius: 8px;">
+              </div>
+              
+              <div class="form-group" style="margin-top: 15px;">
+                <label for="rtmpKeyInput">Stream Key</label>
+                <input type="password" id="rtmpKeyInput" placeholder="Enter stream key" autocomplete="off" style="width: 100%; box-sizing: border-box; background: var(--bg-secondary); border: 1px solid var(--border-color); color: #fff; padding: 10px; border-radius: 8px;">
+              </div>
+              
+              <button class="btn btn-secondary" id="toggleRtmpBtn" style="margin-top: 15px; width: 100%;">Start RTMP Broadcast</button>
             </div>
           </div>
         </div>

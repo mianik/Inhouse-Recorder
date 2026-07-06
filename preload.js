@@ -81,5 +81,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = (event) => callback();
     ipcRenderer.on('screenshot-command', subscription);
     return () => ipcRenderer.removeListener('screenshot-command', subscription);
+  },
+
+  // RTMP Streaming
+  startRtmpStream: (rtmpUrl, streamKey) => ipcRenderer.invoke('start-rtmp-stream', rtmpUrl, streamKey),
+  sendRtmpChunk: (buffer) => ipcRenderer.send('send-rtmp-chunk', buffer),
+  stopRtmpStream: () => ipcRenderer.invoke('stop-rtmp-stream'),
+  onRtmpStatus: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('rtmp-status', subscription);
+    return () => ipcRenderer.removeListener('rtmp-status', subscription);
   }
 });

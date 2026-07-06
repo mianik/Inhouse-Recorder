@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Broadcast - Inhouse Recorder</title>
+  <link rel="stylesheet" href="live.css">
+</head>
+<body>
+  <div class="glass-container">
+    <div class="header">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"></circle>
+          <circle cx="12" cy="12" r="4" fill="#6366f1"></circle>
+        </svg>
+        <span>Inhouse Recorder <span>Live</span></span>
+      </div>
+      <div class="live-indicator">
+        <span class="status-dot off" id="statusDot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Video Display Area -->
+    <div class="video-container">
+      <video id="liveVideo" autoplay playsinline></video>
+      <div class="no-stream" id="noStreamMessage">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 7a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V7z"></path>
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+        </svg>
+        <span>No Live Stream Broadcast Active</span>
+      </div>
+    </div>
+
+    <!-- Viewer info / chat / stats if needed -->
+    <div class="footer-stats">
+      <div class="stat-item">
+        <span>Latency:</span>
+        <strong id="latencyVal">Real-time</strong>
+      </div>
+      <div class="stat-item">
+        <span>Connection:</span>
+        <strong id="connTypeVal">WebRTC</strong>
+      </div>
+    </div>
+  </div>
+
+  <script src="live.js"></script>
+</body>
+</html>
