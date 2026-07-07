@@ -390,18 +390,23 @@ function stopCollaborationServer() {
 
 // Capture Sources
 ipcMain.handle('get-sources', async () => {
-  const sources = await desktopCapturer.getSources({
-    types: ['window', 'screen'],
-    thumbnailSize: { width: 300, height: 200 },
-    fetchWindowIcons: true
-  });
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['window', 'screen'],
+      thumbnailSize: { width: 300, height: 200 },
+      fetchWindowIcons: true
+    });
 
-  return sources.map(source => ({
-    id: source.id,
-    name: source.name,
-    thumbnail: source.thumbnail.toDataURL(),
-    appIcon: (source.appIcon && !source.appIcon.isEmpty()) ? source.appIcon.toDataURL() : null
-  }));
+    return sources.map(source => ({
+      id: source.id,
+      name: source.name,
+      thumbnail: source.thumbnail.toDataURL(),
+      appIcon: (source.appIcon && !source.appIcon.isEmpty()) ? source.appIcon.toDataURL() : null
+    }));
+  } catch (error) {
+    console.error('get-sources failed:', error);
+    throw new Error('Screen Recording Permission Denied. Please enable Screen Recording permissions in macOS System Settings > Privacy & Security.');
+  }
 });
 
 // Settings & Dialogs
