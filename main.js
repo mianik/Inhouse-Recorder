@@ -777,17 +777,57 @@ ipcMain.handle('export-recording', async (event, filename) => {
       return { success: false, error: 'Recording file does not exist on disk.' };
     }
     
+    // Suggest an .mp4 filename
+    const suggestedFilename = filename.replace(/\.webm$/, '.mp4');
+    
     const result = await dialog.showSaveDialog(dashboardWindow, {
-      title: 'Export Recording',
-      defaultPath: path.join(app.getPath('downloads'), filename),
+      title: 'Export Recording to MP4',
+      defaultPath: path.join(app.getPath('downloads'), suggestedFilename),
       filters: [
-        { name: 'WebM Video', extensions: ['webm'] }
+        { name: 'MP4 Video', extensions: ['mp4'] }
       ]
     });
     
     if (!result.canceled && result.filePath) {
-      fs.copyFileSync(item.path, result.filePath);
-      return { success: true, filePath: result.filePath };
+      // Transcode WebM to high-compatibility H.264/AAC MP4 using FFmpeg
+      const transcodeResult = await new Promise((resolve) => {
+        const ffmpeg = spawn('ffmpeg', [
+          '-i', item.path,
+          '-c:v', 'libx264',
+          '-preset', 'veryfast',
+          '-pix_fmt', 'yuv420p',
+          '-c:a', 'aac',
+          '-y', // Overwrite if exists
+          result.filePath
+        ]);
+        
+        ffmpeg.on('error', (err) => {
+          console.warn('FFmpeg transcode failed to spawn. Falling back to copy as webm:', err);
+          resolve({ success: false, error: 'FFmpeg not found' });
+        });
+        
+        ffmpeg.on('close', (code) => {
+          if (code === 0) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: `FFmpeg exited with code ${code}` });
+          }
+        });
+      });
+      
+      if (transcodeResult.success) {
+        return { success: true, filePath: result.filePath };
+      } else {
+        // Fallback: copy WebM file directly if FFmpeg is not found/fails
+        const fallbackPath = result.filePath.replace(/\.mp4$/, '.webm');
+        fs.copyFileSync(item.path, fallbackPath);
+        return { 
+          success: true, 
+          fallback: true, 
+          filePath: fallbackPath, 
+          error: 'FFmpeg was not found on your system. The file has been exported in its native WebM format instead.' 
+        };
+      }
     }
     return { success: false, canceled: true };
   } catch (error) {

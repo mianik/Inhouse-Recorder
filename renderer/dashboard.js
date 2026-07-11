@@ -225,7 +225,11 @@ playerDownloadBtn.addEventListener('click', async () => {
   if (currentPlayingFilename) {
     const result = await window.electronAPI.exportRecording(currentPlayingFilename);
     if (result.success) {
-      alert(`Recording successfully exported to:\n${result.filePath}`);
+      if (result.fallback) {
+        alert(`${result.error}\n\nExported to:\n${result.filePath}`);
+      } else {
+        alert(`Recording successfully exported as MP4 to:\n${result.filePath}`);
+      }
     } else if (!result.canceled) {
       alert(`Failed to export: ${result.error}`);
     }
