@@ -91,5 +91,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('rtmp-status', subscription);
     return () => ipcRenderer.removeListener('rtmp-status', subscription);
+  },
+
+  // Countdown Events
+  sendCountdownComplete: () => ipcRenderer.send('countdown-complete'),
+  onCountdownComplete: (callback) => {
+    const subscription = (event) => callback();
+    ipcRenderer.on('countdown-complete', subscription);
+    return () => ipcRenderer.removeListener('countdown-complete', subscription);
   }
 });

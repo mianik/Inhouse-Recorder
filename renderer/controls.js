@@ -217,7 +217,9 @@ window.addEventListener('keydown', (e) => {
 // Sync state if changed externally
 if (window.electronAPI.onControlsStateChange) {
   window.electronAPI.onControlsStateChange((state) => {
-    if (state.action === 'PAUSE' && !isPaused) {
+    if (state.action === 'RECORDING') {
+      startTimer();
+    } else if (state.action === 'PAUSE' && !isPaused) {
       pauseBtn.click();
     } else if (state.action === 'RESUME' && isPaused) {
       pauseBtn.click();
@@ -239,5 +241,5 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Initialize
-startTimer();
+// Note: Timer will start when the 'RECORDING' event is received after the countdown
 initVisualizer();

@@ -854,6 +854,34 @@ window.electronAPI.onRecordingAction(async (action) => {
   }
 });
 
+// Listener for screen countdown complete to start media recording chunks capturing
+window.electronAPI.onCountdownComplete(() => {
+  if (mediaRecorder && mediaRecorder.state === 'inactive') {
+    recordingStartTime = new Date().getTime();
+    recordingThumbnailData = null;
+    mediaRecorder.start(1000); // chunk every 1 second
+    
+    // Notify control overlay to start its timer
+    window.electronAPI.updateControlsState({ action: 'RECORDING' });
+
+    // Generate preview thumbnail slightly after starting
+    setTimeout(() => {
+      if (captureVideo && screenStream) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 800;
+          canvas.height = 500;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
+          recordingThumbnailData = canvas.toDataURL('image/jpeg', 0.8);
+        } catch (e) {
+          console.warn('Failed to generate preview thumbnail:', e);
+        }
+      }
+    }, 1200);
+  }
+});
+
 // Capture and start recording
 async function startCaptureSession(sourceId) {
   recordedChunks = [];
@@ -938,26 +966,6 @@ async function startCaptureSession(sourceId) {
       cleanStreams();
     };
 
-    // 4. Start recording session
-    recordingStartTime = new Date().getTime();
-    recordingThumbnailData = null;
-    mediaRecorder.start(1000); // chunk every 1 second
-
-    setTimeout(() => {
-      if (captureVideo && screenStream) {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = 800;
-          canvas.height = 500;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
-          recordingThumbnailData = canvas.toDataURL('image/jpeg', 0.8);
-        } catch (e) {
-          console.warn('Failed to generate preview thumbnail:', e);
-        }
-      }
-    }, 1200);
-    
     // Hide dashboard window and show overlays
     window.electronAPI.startRecording(sourceId);
     

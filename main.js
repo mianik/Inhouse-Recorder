@@ -478,6 +478,12 @@ ipcMain.on('start-recording', (event, sourceId) => {
   createAnnotationWindow();
 });
 
+ipcMain.on('countdown-complete', () => {
+  if (dashboardWindow) {
+    dashboardWindow.webContents.send('countdown-complete');
+  }
+});
+
 ipcMain.on('stop-recording', () => {
   if (dashboardWindow) {
     dashboardWindow.webContents.send('recording-action', { type: 'STOP' });

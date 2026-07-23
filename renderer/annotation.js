@@ -134,3 +134,49 @@ window.electronAPI.onAnnotationCommand((cmd) => {
       break;
   }
 });
+
+// -------------------------------------------------------------
+// Countdown Timer Logic
+// -------------------------------------------------------------
+function startCountdown(duration = 5) {
+  const overlay = document.getElementById('countdownOverlay');
+  const numberEl = document.getElementById('countdownNumber');
+  
+  if (!overlay || !numberEl) return;
+  
+  overlay.classList.remove('hidden');
+  let currentCount = duration;
+  
+  // Set initial number and trigger pulse
+  numberEl.textContent = currentCount;
+  numberEl.classList.remove('pulse');
+  void numberEl.offsetWidth; // Trigger reflow
+  numberEl.classList.add('pulse');
+  
+  const interval = setInterval(() => {
+    currentCount--;
+    
+    if (currentCount <= 0) {
+      clearInterval(interval);
+      numberEl.textContent = "Go!";
+      numberEl.classList.remove('pulse');
+      void numberEl.offsetWidth;
+      numberEl.classList.add('pulse');
+      
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+        window.electronAPI.sendCountdownComplete();
+      }, 600);
+    } else {
+      numberEl.textContent = currentCount;
+      numberEl.classList.remove('pulse');
+      void numberEl.offsetWidth;
+      numberEl.classList.add('pulse');
+    }
+  }, 1000);
+}
+
+// Automatically start the countdown when the annotation page loads
+window.addEventListener('DOMContentLoaded', () => {
+  startCountdown(5);
+});
