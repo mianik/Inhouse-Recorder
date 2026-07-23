@@ -943,10 +943,18 @@ async function startCaptureSession(sourceId) {
     
     mediaRecorder = new MediaRecorder(combinedStream, options);
     
-    mediaRecorder.ondataavailable = async (event) => {
+    let chunkQueue = Promise.resolve();
+    mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
-        const arrayBuffer = await event.data.arrayBuffer();
-        await window.electronAPI.saveVideoChunk(arrayBuffer);
+        const blob = event.data;
+        chunkQueue = chunkQueue.then(async () => {
+          try {
+            const arrayBuffer = await blob.arrayBuffer();
+            await window.electronAPI.saveVideoChunk(arrayBuffer);
+          } catch (err) {
+            console.error('Failed to save chunk:', err);
+          }
+        });
       }
     };
     
@@ -1328,10 +1336,20 @@ async function startRtmpBroadcast() {
         videoBitsPerSecond: 2500000 // 2.5 Mbps
       });
 
-      rtmpRecorder.ondataavailable = async (event) => {
+      let rtmpQueue = Promise.resolve();
+      rtmpRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0 && rtmpStreamActive) {
-          const buffer = await event.data.arrayBuffer();
-          window.electronAPI.sendRtmpChunk(buffer);
+          const blob = event.data;
+          rtmpQueue = rtmpQueue.then(async () => {
+            try {
+              const buffer = await blob.arrayBuffer();
+              if (rtmpStreamActive) {
+                window.electronAPI.sendRtmpChunk(buffer);
+              }
+            } catch (err) {
+              console.error('Failed to send RTMP chunk:', err);
+            }
+          });
         }
       };
 
