@@ -753,6 +753,23 @@ ipcMain.handle('delete-recording', (event, filename) => {
   return false;
 });
 
+function getFFmpegPath() {
+  if (process.platform === 'darwin') {
+    const paths = [
+      '/opt/homebrew/bin/ffmpeg',
+      '/usr/local/bin/ffmpeg',
+      '/usr/bin/ffmpeg',
+      '/bin/ffmpeg'
+    ];
+    for (const p of paths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+  }
+  return 'ffmpeg';
+}
+
 // Open Recording Folder in Finder
 ipcMain.handle('open-recording-folder', (event, filename) => {
   const recordingsIndexFile = path.join(app.getPath('userData'), 'recordings.json');
@@ -797,7 +814,7 @@ ipcMain.handle('export-recording', async (event, filename) => {
     if (!result.canceled && result.filePath) {
       // Transcode WebM to high-compatibility H.264/AAC MP4 using FFmpeg
       const transcodeResult = await new Promise((resolve) => {
-        const ffmpeg = spawn('ffmpeg', [
+        const ffmpeg = spawn(getFFmpegPath(), [
           '-i', item.path,
           '-c:v', 'libx264',
           '-preset', 'veryfast',
@@ -867,7 +884,7 @@ ipcMain.handle('start-rtmp-stream', async (event, rtmpUrl, streamKey) => {
   ];
 
   try {
-    rtmpProcess = spawn('ffmpeg', ffmpegArgs);
+    rtmpProcess = spawn(getFFmpegPath(), ffmpegArgs);
 
     rtmpProcess.stdin.on('error', (err) => {
       console.error('rtmpProcess stdin error:', err);
