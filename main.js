@@ -753,21 +753,12 @@ ipcMain.handle('delete-recording', (event, filename) => {
   return false;
 });
 
+const ffmpegStatic = require('ffmpeg-static');
+
 function getFFmpegPath() {
-  if (process.platform === 'darwin') {
-    const paths = [
-      '/opt/homebrew/bin/ffmpeg',
-      '/usr/local/bin/ffmpeg',
-      '/usr/bin/ffmpeg',
-      '/bin/ffmpeg'
-    ];
-    for (const p of paths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-  }
-  return 'ffmpeg';
+  // ffmpeg-static path must be adjusted in production to point to the unpacked binary
+  // outside the ASAR archive so child_process.spawn can execute it under Hardened Runtime.
+  return ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 }
 
 // Open Recording Folder in Finder
