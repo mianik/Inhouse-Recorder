@@ -6,6 +6,7 @@ const canvasCtx = canvas.getContext('2d');
 const pauseBtn = document.getElementById('pauseBtn');
 const stopBtn = document.getElementById('stopBtn');
 const micBtn = document.getElementById('micBtn');
+const webcamBtn = document.getElementById('webcamBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 
 // New Presentation tool elements
@@ -19,11 +20,14 @@ const pauseIcon = document.getElementById('pauseIcon');
 const playIcon = document.getElementById('playIcon');
 const micOnIcon = document.getElementById('micOnIcon');
 const micOffIcon = document.getElementById('micOffIcon');
+const webcamOnIcon = document.getElementById('webcamOnIcon');
+const webcamOffIcon = document.getElementById('webcamOffIcon');
 
 let seconds = 0;
 let timerInterval = null;
 let isPaused = false;
 let isMicMuted = false;
+let isWebcamOff = false;
 let audioContext = null;
 let analyser = null;
 let microphoneStream = null;
@@ -154,6 +158,23 @@ micBtn.addEventListener('click', () => {
   }
   if (window.electronAPI.toggleMic) {
     window.electronAPI.toggleMic(isMicMuted);
+  }
+});
+
+webcamBtn.addEventListener('click', () => {
+  isWebcamOff = !isWebcamOff;
+  if (isWebcamOff) {
+    webcamOnIcon.classList.add('hidden');
+    webcamOffIcon.classList.remove('hidden');
+    webcamBtn.title = 'Turn Camera On';
+    webcamBtn.classList.add('active');
+    if (window.electronAPI.hideCameraBubble) window.electronAPI.hideCameraBubble();
+  } else {
+    webcamOffIcon.classList.add('hidden');
+    webcamOnIcon.classList.remove('hidden');
+    webcamBtn.title = 'Turn Camera Off';
+    webcamBtn.classList.remove('active');
+    if (window.electronAPI.showCameraBubble) window.electronAPI.showCameraBubble();
   }
 });
 

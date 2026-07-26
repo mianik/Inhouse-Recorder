@@ -229,6 +229,13 @@ function createControlsWindow() {
     controlsWindow.setAlwaysOnTop(true);
   }
 
+  // Hide the control bar from being captured in the screen recording!
+  if (typeof controlsWindow.setHiddenInCapture === 'function') {
+    controlsWindow.setHiddenInCapture(true);
+  } else {
+    controlsWindow.setContentProtection(true);
+  }
+
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const displayHeight = primaryDisplay.workAreaSize.height;
