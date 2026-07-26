@@ -60,6 +60,14 @@ npm run dist
 ```
 This generates the installation bundle inside the `dist/` directory.
 
+### Homebrew Installation
+You can easily install the pre-compiled application using Homebrew directly from this repository:
+```bash
+brew tap mianik/Inhouse-Recorder https://github.com/mianik/Inhouse-Recorder
+brew install --cask inhouse-recorder
+```
+*(Note: To install via Homebrew, the repository must have a GitHub Release matching the version in the Cask file).*
+
 ---
 
 ## macOS Permission Configuration
