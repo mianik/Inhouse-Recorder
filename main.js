@@ -810,9 +810,34 @@ ipcMain.handle('export-recording', async (event, filename) => {
     });
     
     if (!result.canceled && result.filePath) {
+      // Validate WebM file header before attempting transcode
+      const fileHeader = Buffer.alloc(4);
+      const fd = fs.openSync(item.path, 'r');
+      fs.readSync(fd, fileHeader, 0, 4, 0);
+      fs.closeSync(fd);
+      const isValidEBML = fileHeader[0] === 0x1A && fileHeader[1] === 0x45 && fileHeader[2] === 0xDF && fileHeader[3] === 0xA3;
+      
+      if (!isValidEBML) {
+        // File has corrupt EBML header — skip FFmpeg, copy as WebM directly
+        const fallbackPath = result.filePath.replace(/\.mp4$/, '.webm');
+        fs.copyFileSync(item.path, fallbackPath);
+        return { 
+          success: true, 
+          fallback: true, 
+          filePath: fallbackPath, 
+          error: 'The recording file has a corrupt container header and cannot be converted to MP4. It has been exported as WebM instead. This may be caused by an older recording. New recordings should export correctly.' 
+        };
+      }
+
       // Transcode WebM to high-compatibility H.264/AAC MP4 using FFmpeg
+      const ffmpegPath = getFFmpegPath();
+      console.log('FFmpeg binary path:', ffmpegPath);
+      console.log('FFmpeg binary exists:', fs.existsSync(ffmpegPath));
+      
       const transcodeResult = await new Promise((resolve) => {
-        const ffmpeg = spawn(getFFmpegPath(), [
+        let stderrOutput = '';
+        
+        const ffmpeg = spawn(ffmpegPath, [
           '-i', item.path,
           '-c:v', 'libx264',
           '-preset', 'veryfast',
@@ -822,24 +847,29 @@ ipcMain.handle('export-recording', async (event, filename) => {
           result.filePath
         ]);
         
+        ffmpeg.stderr.on('data', (data) => {
+          stderrOutput += data.toString();
+        });
+        
         ffmpeg.on('error', (err) => {
-          console.warn('FFmpeg transcode failed to spawn. Falling back to copy as webm:', err);
-          resolve({ success: false, error: 'FFmpeg not found' });
+          console.error('FFmpeg failed to spawn:', err.message);
+          resolve({ success: false, spawnError: true, error: `FFmpeg could not be started: ${err.message}` });
         });
         
         ffmpeg.on('close', (code) => {
           if (code === 0) {
             resolve({ success: true });
           } else {
-            resolve({ success: false, error: `FFmpeg exited with code ${code}` });
+            console.error('FFmpeg transcode failed with code', code, ':', stderrOutput.slice(-500));
+            resolve({ success: false, spawnError: false, error: `FFmpeg transcode failed (exit code ${code})` });
           }
         });
       });
       
       if (transcodeResult.success) {
         return { success: true, filePath: result.filePath };
-      } else {
-        // Fallback: copy WebM file directly if FFmpeg is not found/fails
+      } else if (transcodeResult.spawnError) {
+        // FFmpeg binary truly couldn't be found/executed
         const fallbackPath = result.filePath.replace(/\.mp4$/, '.webm');
         fs.copyFileSync(item.path, fallbackPath);
         return { 
@@ -847,6 +877,16 @@ ipcMain.handle('export-recording', async (event, filename) => {
           fallback: true, 
           filePath: fallbackPath, 
           error: 'FFmpeg was not found on your system. The file has been exported in its native WebM format instead.' 
+        };
+      } else {
+        // FFmpeg ran but transcode failed (e.g. corrupt input)
+        const fallbackPath = result.filePath.replace(/\.mp4$/, '.webm');
+        fs.copyFileSync(item.path, fallbackPath);
+        return { 
+          success: true, 
+          fallback: true, 
+          filePath: fallbackPath, 
+          error: `MP4 conversion failed: ${transcodeResult.error}. The file has been exported in its native WebM format instead.`
         };
       }
     }

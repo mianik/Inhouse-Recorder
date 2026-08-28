@@ -959,6 +959,11 @@ async function startCaptureSession(sourceId) {
     };
     
     mediaRecorder.onstop = async () => {
+      // CRITICAL: Wait for ALL queued chunks to finish writing before finalizing.
+      // Without this, the last chunks (containing EBML closing elements) may not
+      // be written yet, producing a corrupt WebM file that FFmpeg cannot parse.
+      await chunkQueue;
+
       const durationSecs = Math.round((new Date().getTime() - recordingStartTime) / 1000);
       const mins = String(Math.floor(durationSecs / 60)).padStart(2, '0');
       const secs = String(durationSecs % 60).padStart(2, '0');
